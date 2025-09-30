@@ -126,3 +126,31 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// TODO: implement these structs below
+struct Pipeline {
+    // source
+    // destination
+    // filter
+    // generic information for decoder and encoder both
+    // total frames (for progress)
+}
+
+struct Source {
+    // ictx
+    // decoder
+    // some important information for inner business logic
+}
+
+struct Destination {
+    // octx
+    // encoder (only opened)
+    // some important information for inner business logic
+}
+
+// TODO: make the logic of filter more pleasant to use
+// TODO: maybe there need to use something other like 'Transformation' instead of 'Filter' that
+// applies to encoder for seamless changes.
+struct Filter {
+    // filter_graph
+}
