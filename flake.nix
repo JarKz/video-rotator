@@ -37,11 +37,17 @@
     {
 
       devShells."${system}".default = pkgs.mkShell {
+        packages = with pkgs; [
+          llvmPackages_20.clang-unwrapped.lib
+          llvmPackages_20.libllvm.lib
+        ];
+
         buildInputs = with pkgs; [
           rustPackage
           ffmpeg_8-full
           x264
           nasm
+          llvmPackages_20.libcxxClang
         ];
 
         nativeBuildInputs = with pkgs; [
