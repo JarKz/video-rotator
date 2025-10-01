@@ -48,6 +48,7 @@
           x264
           nasm
           llvmPackages_20.libcxxClang
+          libGL
         ];
 
         nativeBuildInputs = with pkgs; [

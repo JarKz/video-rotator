@@ -1,4 +1,7 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use ffmpeg_next as ffmpeg;
+
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
