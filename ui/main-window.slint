@@ -1,0 +1,212 @@
+import { Palette, Button, ComboBox, ScrollView, VerticalBox } from "std-widgets.slint";
+
+export struct DirectoryInfo {
+  path: string,
+}
+
+export struct FileInfo {
+  path: string,
+  name: string,
+}
+
+export enum RotationValue { no-rotation, deg-90, deg-180, deg-270 }
+
+component File inherits VerticalBox {
+  in property<FileInfo> info: {
+    path: "",
+    name: "Unknown",
+  };
+
+  alignment: start;
+
+    Image {
+      source: @image-url("res/video-icon.png");
+      image-fit: contain;
+    }
+
+    Text {
+      height: 60px;
+
+      text: info.name;
+      wrap: word-wrap;
+      font_size: 16pt;
+      overflow: elide;
+      horizontal-alignment: center;
+    }
+}
+
+component ImageButton inherits Rectangle {
+  callback clicked <=> area.clicked;
+
+  in-out property<image> image <=> image.source;
+  in-out property<ImageFit> image-fit <=> image.image-fit;
+
+  border-radius: 5px;
+  background: area.pressed ? gray.brighter(0.7) : transparent;
+
+  animate background {
+    duration: 120ms;
+  }
+
+  image := Image {
+    width: parent.width;
+    height: parent.height;
+  }
+
+  area := TouchArea {
+    mouse-cursor: pointer;
+  }
+}
+
+component DirectorySelector inherits Rectangle {
+  in-out property<DirectoryInfo> selected-directory: {
+    path: ""
+  };
+
+  callback pick-directory() -> DirectoryInfo;
+
+  HorizontalLayout {
+    alignment: space-between;
+    spacing: 10px;
+    padding: 5px;
+
+    Text {
+      text: selected-directory.path;
+
+      font_size: 16pt;
+      overflow: elide;
+      vertical-alignment: center;
+    }
+
+    ImageButton {
+      width: 45px;
+      height: 45px;
+
+      image: @image-url("res/open-dir.png");
+      image-fit: contain;
+
+      clicked => {
+        selected-directory = pick-directory();
+      }
+    }
+  }
+}
+
+component ControlPane inherits Rectangle {
+  in-out property<DirectoryInfo> output-directory <=> path-selector.selected-directory;
+  in-out property<length> inner-padding: 0px;
+  in-out property<RotationValue> rotation-value: no-rotation;
+
+  property<[string]> rotation-value-model: ["No rotation", "90° Clockwise", "180° Clockwise", "270° Clockwise"];
+
+  callback pick-directory <=> path-selector.pick-directory;
+  callback rotate-videos <=> button.clicked;
+
+  function get-rotation-value(rotation-string: string) -> RotationValue {
+    return rotation-string == rotation-value-model[0] ? no-rotation
+         : rotation-string == rotation-value-model[1] ? deg-90
+         : rotation-string == rotation-value-model[2] ? deg-180
+         : rotation-string == rotation-value-model[3] ? deg-270 : no-rotation;
+  }
+
+  HorizontalLayout {
+    alignment: space-around;
+    padding <=> root.inner-padding;
+
+    VerticalLayout {
+      alignment: start;
+      spacing: 15px;
+
+      width: 500px;
+
+      path-selector := DirectorySelector {
+        background: Palette.alternate-background;
+        border-radius: 8px;
+      }
+
+      combo := ComboBox {
+        model: rotation-value-model;
+        current-value: rotation-value-model[0];
+
+        selected(value) => {
+          rotation-value = get-rotation-value(value);
+        }
+      }
+    }
+
+    button := Button {
+      width: 150px;
+      height: 50px;
+
+      text: "Rotate videos";
+    }
+  }
+}
+
+export component MainWindow inherits Window {
+  title: "Video Rotator";
+
+  min-width: 1280px;
+  min-height: 720px;
+
+  preferred-width: 1280px;
+  preferred-height: 720px;
+
+  background: Palette.background;
+
+  in-out property<[FileInfo]> file_infos: [];
+  in-out property<DirectoryInfo> output-directory <=> control.output-directory;
+  in-out property<RotationValue> rotation-value <=> control.rotation-value;
+
+  callback pick-files;
+  callback pick-directory <=> control.pick-directory;
+  callback rotate-videos <=> control.rotate-videos;
+
+  VerticalLayout {
+    padding: 70px;
+    spacing: 40px;
+    alignment: center;
+
+    ScrollView {
+      height: 215px;
+
+      HorizontalLayout {
+        spacing: 15px;
+        alignment: center;
+
+        for file_info in file_infos: File {
+          info: file_info;
+
+          width: 150px;
+          height: 200px;
+        }
+
+        ImageButton {
+          width: 115px;
+          height: 140px;
+
+          image: @image-url("res/new-file.png");
+          image-fit: contain;
+
+          clicked => {
+            pick-files()
+          }
+        }
+      }
+    }
+
+    HorizontalLayout {
+      alignment: center;
+
+      control := ControlPane {
+        width: 800px;
+        height: 150px;
+
+        inner-padding: 20px;
+
+        background: Palette.control-background;
+        border-radius: 15px;
+      }
+    }
+  }
+}

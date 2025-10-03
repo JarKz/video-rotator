@@ -40,6 +40,7 @@
         packages = with pkgs; [
           llvmPackages_20.clang-unwrapped.lib
           llvmPackages_20.libllvm.lib
+          kdePackages.full
         ];
 
         buildInputs = with pkgs; [
@@ -49,6 +50,8 @@
           nasm
           llvmPackages_20.libcxxClang
           libGL
+          lld
+          gcc
         ];
 
         nativeBuildInputs = with pkgs; [
@@ -64,6 +67,7 @@
                 llvmPackages_20.libllvm.lib
                 ffmpeg_8-full
                 x264.lib
+                kdePackages.full
               ]
             )
           }

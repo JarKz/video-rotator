@@ -1,23 +1,163 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use ffmpeg_next as ffmpeg;
+use slint::{ComponentHandle, Model, ModelRc, ToSharedString, VecModel};
 
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    thread::JoinHandle,
+    time::Duration,
 };
+
+slint::include_modules!();
+
+const SUPPORTED_EXTENSIONS: [&str; 2] = ["mp4", "mkv"];
 
 fn main() -> anyhow::Result<()> {
     ffmpeg::init()?;
 
-    const INPUT_FILE: &str = "input.mp4";
-    const OUTPUT_FILE: &str = "output.mp4";
+    let window = MainWindow::new()?;
+    let thread_pool: Arc<Mutex<Vec<JoinHandle<anyhow::Result<()>>>>> = Arc::new(Mutex::new(vec![]));
 
-    let mut pipeline = Pipeline::init(INPUT_FILE, OUTPUT_FILE, Rotate::Deg90)?;
-    pipeline.write_header()?;
-    pipeline.configure()?;
-    pipeline.pump_packets()?;
-    pipeline.write_trailer()?;
+    let empty_file_infos: VecModel<FileInfo> = VecModel::from(vec![]);
+    let model = ModelRc::new(empty_file_infos);
+    window.set_file_infos(model);
+
+    window.on_pick_directory(|| {
+        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+            DirectoryInfo {
+                path: folder.to_string_lossy().to_shared_string(),
+            }
+        } else {
+            DirectoryInfo {
+                path: "".to_shared_string(),
+            }
+        }
+    });
+
+    let weak_window = window.as_weak();
+
+    window.on_pick_files(move || {
+        let Some(files) = rfd::FileDialog::new().pick_files() else {
+            return;
+        };
+
+        for file in files {
+            if !file.is_file() {
+                return;
+            }
+
+            let Some(file_extension) = file.extension() else {
+                return;
+            };
+
+            if !SUPPORTED_EXTENSIONS.contains(&&*file_extension.to_string_lossy()) {
+                return;
+            }
+
+            let file_info = FileInfo {
+                name: file
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_shared_string(),
+                path: file.to_string_lossy().to_shared_string(),
+            };
+
+            weak_window
+                .clone()
+                .upgrade_in_event_loop(|window| {
+                    let file_infos_model = window.get_file_infos();
+                    let file_infos = file_infos_model
+                        .as_any()
+                        .downcast_ref::<VecModel<FileInfo>>()
+                        .unwrap();
+
+                    if !file_infos.iter().any(|fi| fi == file_info) {
+                        file_infos.push(file_info);
+                    }
+                })
+                .unwrap();
+        }
+    });
+
+    let weak_window = window.as_weak();
+    let referenced_thread_pool = thread_pool.clone();
+    window.on_rotate_videos(move || {
+        let window = weak_window.upgrade().unwrap();
+        let file_infos_model = window.get_file_infos();
+        let file_infos = file_infos_model
+            .as_any()
+            .downcast_ref::<VecModel<FileInfo>>()
+            .unwrap();
+        let output_directory = window.get_output_directory();
+        let output_path = Path::new(output_directory.path.as_str());
+        let rotation_value = window.get_rotation_value();
+
+        for file_info in file_infos.iter() {
+            let file_path = Path::new(file_info.path.as_str());
+            let file_name = file_path.file_stem().unwrap();
+            let file_extension = file_path.extension().unwrap();
+
+            let mut count = 1;
+            let mut output_file_path = {
+                let mut output = output_path.to_owned();
+                output.push(file_name);
+                output = output.with_extension(file_extension);
+                output
+            };
+
+            while output_file_path.exists() {
+                output_file_path = output_path.to_owned();
+                let new_file_name =
+                    file_name.to_string_lossy().into_owned() + "(" + &count.to_string() + ")";
+                output_file_path.push(new_file_name);
+                output_file_path = output_file_path.with_extension(file_extension);
+
+                count += 1;
+            }
+
+            let mut guard = referenced_thread_pool.lock().unwrap();
+            guard.push(std::thread::spawn(move || {
+                let mut pipeline =
+                    Pipeline::init(file_info.path, output_file_path, rotation_value.into())?;
+                pipeline.write_header()?;
+                pipeline.configure()?;
+                pipeline.pump_packets()?;
+                pipeline.write_trailer()?;
+
+                Ok(())
+            }));
+        }
+    });
+
+    let therad_checker = std::thread::spawn(move || {
+        loop {
+            let mut pool_guard = thread_pool.lock().unwrap();
+
+            let mut to_remove = vec![];
+            for (index, thread) in pool_guard.iter().enumerate() {
+                if thread.is_finished() {
+                    to_remove.push(index)
+                }
+            }
+
+            for index in to_remove.into_iter().rev() {
+                let thread = pool_guard.remove(index);
+                thread.join().unwrap().unwrap();
+            }
+
+            drop(pool_guard);
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    });
+
+    window.run()?;
+
+    // idgaf
+    let _ = therad_checker.join();
 
     Ok(())
 }
@@ -318,16 +458,31 @@ impl Filter {
     fn create(decoder: &VideoDecoder, rotate: &Rotate) -> Result<Self, ffmpeg::Error> {
         let mut filter_graph = ffmpeg::filter::Graph::new();
 
-        let filter_args = format!(
-            "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect=1/1:colorspace={}:range={}",
+        let mut filter_args = format!(
+            "video_size={}x{}:pixel_aspect=1/1",
             decoder.width(),
             decoder.height(),
-            decoder.format().descriptor().unwrap().name(),
-            decoder.frame_rate().unwrap().denominator(),
-            decoder.frame_rate().unwrap().numerator(),
-            decoder.color_space().name().unwrap(),
-            decoder.color_range().name().unwrap(),
         );
+        if let Some(pix_fmt) = decoder.format().descriptor() {
+            filter_args = filter_args + ":pix_fmt=" + pix_fmt.name();
+        }
+
+        if let Some(frame_rate) = decoder.frame_rate() {
+            filter_args = filter_args
+                + ":time_base="
+                + &frame_rate.denominator().to_string()
+                + "/"
+                + &frame_rate.numerator().to_string();
+        }
+
+        if let Some(color_space) = decoder.color_space().name() {
+            filter_args = filter_args + ":colorspace=" + color_space;
+        }
+
+        if let Some(color_range) = decoder.color_range().name() {
+            filter_args = filter_args + ":range=" + color_range;
+        }
+
         dbg!(&filter_args);
 
         filter_graph.add(&ffmpeg::filter::find("buffer").unwrap(), "in", &filter_args)?;
@@ -394,6 +549,17 @@ impl Rotate {
         match self {
             Rotate::Deg0 | Rotate::Deg180 => false,
             Rotate::Deg90 | Rotate::Deg270 => true,
+        }
+    }
+}
+
+impl From<RotationValue> for Rotate {
+    fn from(value: RotationValue) -> Self {
+        match value {
+            RotationValue::NoRotation => Rotate::Deg0,
+            RotationValue::Deg90 => Rotate::Deg90,
+            RotationValue::Deg180 => Rotate::Deg180,
+            RotationValue::Deg270 => Rotate::Deg270,
         }
     }
 }
@@ -485,7 +651,6 @@ impl VideoEncoder {
         let mut options = ffmpeg::Dictionary::new();
         options.set("preset", "medium");
         options.set("crf", "23");
-        options.set("profile", "high");
 
         Ok(encoder.open_with(options)?.into())
     }
