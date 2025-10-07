@@ -1,4 +1,4 @@
-import { Palette, Button, ComboBox, ScrollView, VerticalBox } from "std-widgets.slint";
+import { Palette, Button, ComboBox, ScrollView, VerticalBox, ProgressIndicator } from "std-widgets.slint";
 
 export struct DirectoryInfo {
   path: string,
@@ -7,35 +7,46 @@ export struct DirectoryInfo {
 export struct FileInfo {
   path: string,
   name: string,
+
+  progress: float,
 }
 
 export enum RotationValue { no-rotation, deg-90, deg-180, deg-270 }
 
 component File inherits VerticalBox {
+  in-out property<bool> is-transcoding: false;
+
   in property<FileInfo> info: {
     path: "",
     name: "Unknown",
+    progress: 0.0,
   };
 
   alignment: start;
 
-    Image {
-      source: @image-url("res/video-icon.png");
-      image-fit: contain;
-    }
+  Image {
+    source: @image-url("res/video-icon.png");
+    image-fit: contain;
+  }
 
-    Text {
-      height: 60px;
+  Text {
+    height: 60px;
 
-      text: info.name;
-      wrap: word-wrap;
-      font_size: 16pt;
-      overflow: elide;
-      horizontal-alignment: center;
-    }
+    text: info.name;
+    wrap: word-wrap;
+    font_size: 16pt;
+    overflow: elide;
+    horizontal-alignment: center;
+  }
+
+  if is-transcoding: ProgressIndicator {
+    progress: info.progress;
+  }
 }
 
 component ImageButton inherits Rectangle {
+  in-out property<bool> enabled: true;
+
   callback clicked <=> area.clicked;
 
   in-out property<image> image <=> image.source;
@@ -54,16 +65,18 @@ component ImageButton inherits Rectangle {
   }
 
   area := TouchArea {
+    enabled <=> root.enabled;
     mouse-cursor: pointer;
   }
 }
 
 component DirectorySelector inherits Rectangle {
+  in-out property<bool> enabled: true;
   in-out property<DirectoryInfo> selected-directory: {
-    path: ""
+    path: "Select output folder"
   };
 
-  callback pick-directory() -> DirectoryInfo;
+  callback pick-directory <=> button.clicked;
 
   HorizontalLayout {
     alignment: space-between;
@@ -78,21 +91,21 @@ component DirectorySelector inherits Rectangle {
       vertical-alignment: center;
     }
 
-    ImageButton {
+    button := ImageButton {
       width: 45px;
       height: 45px;
 
       image: @image-url("res/open-dir.png");
       image-fit: contain;
 
-      clicked => {
-        selected-directory = pick-directory();
-      }
+      enabled <=> root.enabled;
     }
   }
 }
 
 component ControlPane inherits Rectangle {
+  in-out property<bool> enabled: true;
+
   in-out property<DirectoryInfo> output-directory <=> path-selector.selected-directory;
   in-out property<length> inner-padding: 0px;
   in-out property<RotationValue> rotation-value: no-rotation;
@@ -120,11 +133,13 @@ component ControlPane inherits Rectangle {
       width: 500px;
 
       path-selector := DirectorySelector {
+        enabled <=> root.enabled;
         background: Palette.alternate-background;
         border-radius: 8px;
       }
 
       combo := ComboBox {
+        enabled <=> root.enabled;
         model: rotation-value-model;
         current-value: rotation-value-model[0];
 
@@ -154,6 +169,8 @@ export component MainWindow inherits Window {
 
   background: Palette.background;
 
+  in-out property<bool> is-transcoding: false;
+
   in-out property<[FileInfo]> file_infos: [];
   in-out property<DirectoryInfo> output-directory <=> control.output-directory;
   in-out property<RotationValue> rotation-value <=> control.rotation-value;
@@ -175,6 +192,8 @@ export component MainWindow inherits Window {
         alignment: center;
 
         for file_info in file_infos: File {
+          is-transcoding <=> root.is-transcoding;
+
           info: file_info;
 
           width: 150px;
@@ -182,6 +201,8 @@ export component MainWindow inherits Window {
         }
 
         ImageButton {
+          enabled: !is-transcoding;
+
           width: 115px;
           height: 140px;
 
@@ -199,6 +220,8 @@ export component MainWindow inherits Window {
       alignment: center;
 
       control := ControlPane {
+        enabled: !is-transcoding;
+
         width: 800px;
         height: 150px;
 

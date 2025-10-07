@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use ffmpeg_next as ffmpeg;
-use slint::{ComponentHandle, Model, ModelRc, ToSharedString, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, ToSharedString, VecModel, Weak};
 
 use std::{
     collections::HashMap,
@@ -25,15 +25,18 @@ fn main() -> anyhow::Result<()> {
     let model = ModelRc::new(empty_file_infos);
     window.set_file_infos(model);
 
-    window.on_pick_directory(|| {
-        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-            DirectoryInfo {
-                path: folder.to_string_lossy().to_shared_string(),
-            }
-        } else {
-            DirectoryInfo {
-                path: "".to_shared_string(),
-            }
+    let weak_window = window.as_weak();
+    window.on_pick_directory(move || {
+        if let Some(folder) = rfd::FileDialog::new()
+            .set_can_create_directories(true)
+            .pick_folder()
+        {
+            // idgaf
+            let _ = weak_window.upgrade_in_event_loop(move |window| {
+                window.set_output_directory(DirectoryInfo {
+                    path: folder.to_string_lossy().to_shared_string(),
+                });
+            });
         }
     });
 
@@ -64,6 +67,7 @@ fn main() -> anyhow::Result<()> {
                     .to_string_lossy()
                     .to_shared_string(),
                 path: file.to_string_lossy().to_shared_string(),
+                progress: 0.0,
             };
 
             weak_window
@@ -87,52 +91,33 @@ fn main() -> anyhow::Result<()> {
     let referenced_thread_pool = thread_pool.clone();
     window.on_rotate_videos(move || {
         let window = weak_window.upgrade().unwrap();
+        window.set_is_transcoding(true);
+
         let file_infos_model = window.get_file_infos();
         let file_infos = file_infos_model
             .as_any()
             .downcast_ref::<VecModel<FileInfo>>()
             .unwrap();
+
         let output_directory = window.get_output_directory();
-        let output_path = Path::new(output_directory.path.as_str());
         let rotation_value = window.get_rotation_value();
 
-        for file_info in file_infos.iter() {
-            let file_path = Path::new(file_info.path.as_str());
-            let file_name = file_path.file_stem().unwrap();
-            let file_extension = file_path.extension().unwrap();
-
-            let mut count = 1;
-            let mut output_file_path = {
-                let mut output = output_path.to_owned();
-                output.push(file_name);
-                output = output.with_extension(file_extension);
-                output
-            };
-
-            while output_file_path.exists() {
-                output_file_path = output_path.to_owned();
-                let new_file_name =
-                    file_name.to_string_lossy().into_owned() + "(" + &count.to_string() + ")";
-                output_file_path.push(new_file_name);
-                output_file_path = output_file_path.with_extension(file_extension);
-
-                count += 1;
-            }
+        for (file_index, file_info) in file_infos.iter().enumerate() {
+            let output_file_path =
+                generate_unique_filename(output_directory.path.as_str(), &file_info);
 
             let mut guard = referenced_thread_pool.lock().unwrap();
-            guard.push(std::thread::spawn(move || {
-                let mut pipeline =
-                    Pipeline::init(file_info.path, output_file_path, rotation_value.into())?;
-                pipeline.write_header()?;
-                pipeline.configure()?;
-                pipeline.pump_packets()?;
-                pipeline.write_trailer()?;
-
-                Ok(())
-            }));
+            guard.push(new_pipeline(
+                window.as_weak(),
+                file_info,
+                file_index,
+                output_file_path,
+                rotation_value,
+            ));
         }
     });
 
+    let window_weak = window.as_weak();
     let therad_checker = std::thread::spawn(move || {
         loop {
             let mut pool_guard = thread_pool.lock().unwrap();
@@ -149,6 +134,17 @@ fn main() -> anyhow::Result<()> {
                 thread.join().unwrap().unwrap();
             }
 
+            if pool_guard.is_empty() {
+                window_weak
+                    .upgrade_in_event_loop(|window| {
+                        let is_transcoding = window.get_is_transcoding();
+                        if is_transcoding {
+                            window.set_is_transcoding(false);
+                        }
+                    })
+                    .unwrap();
+            }
+
             drop(pool_guard);
             std::thread::sleep(Duration::from_millis(200));
         }
@@ -162,9 +158,66 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn generate_unique_filename<Output: AsRef<Path>>(
+    output_dir: Output,
+    file_info: &FileInfo,
+) -> PathBuf {
+    let file_path = Path::new(file_info.path.as_str());
+    let file_name = file_path.file_stem().unwrap();
+    let file_extension = file_path.extension().unwrap();
+    let output_dir = output_dir.as_ref();
+
+    let mut count = 1;
+    let mut output_file_path = {
+        let mut output = output_dir.to_owned();
+        output.push(file_name);
+        output = output.with_extension(file_extension);
+        output
+    };
+
+    while output_file_path.exists() {
+        output_file_path = output_dir.to_owned();
+        let new_file_name =
+            file_name.to_string_lossy().into_owned() + "(" + &count.to_string() + ")";
+        output_file_path.push(new_file_name);
+        output_file_path = output_file_path.with_extension(file_extension);
+
+        count += 1;
+    }
+
+    output_file_path
+}
+
+fn new_pipeline<P: AsRef<Path> + Send + 'static>(
+    window_ref: Weak<MainWindow>,
+    file: FileInfo,
+    file_index: usize,
+    output_file_path: P,
+    rotation_value: RotationValue,
+) -> JoinHandle<anyhow::Result<()>> {
+    std::thread::spawn(move || {
+        let mut pipeline = Pipeline::init(file.path, output_file_path, rotation_value.into())?;
+        pipeline.write_header()?;
+        pipeline.configure()?;
+        pipeline.pump_packets(move |new_progress| {
+            window_ref.upgrade_in_event_loop(move |window| {
+                let file_infos = window.get_file_infos();
+                let mut file_info = file_infos.row_data(file_index).unwrap();
+                file_info.progress = new_progress as f32;
+                file_infos.set_row_data(file_index, file_info);
+            })?;
+            Ok(())
+        })?;
+        pipeline.write_trailer()?;
+
+        Ok(())
+    })
+}
+
 struct Pipeline {
     source: Source,
     destination: Destination,
+    progress: f64,
 }
 
 impl Pipeline {
@@ -179,6 +232,7 @@ impl Pipeline {
         Ok(Self {
             source,
             destination,
+            progress: 0.0,
         })
     }
 
@@ -197,8 +251,16 @@ impl Pipeline {
         Ok(())
     }
 
-    fn pump_packets(&mut self) -> anyhow::Result<()> {
+    fn pump_packets<F: FnMut(f64) -> anyhow::Result<()>>(
+        &mut self,
+        mut on_update_progress: F,
+    ) -> anyhow::Result<()> {
         for (input_stream, mut packet) in self.source.input_ctx.packets() {
+            if let Some(current_time) = packet.pts() {
+                self.progress = current_time as f64 / input_stream.duration() as f64;
+                on_update_progress(self.progress)?;
+            }
+
             let istream_index: StreamId = input_stream.index().into();
 
             let in_time_base = self.source.time_bases[&istream_index];
