@@ -90,6 +90,20 @@ fn main() -> anyhow::Result<()> {
     });
 
     let weak_window = window.as_weak();
+    window.on_remove_video(move |index| {
+        // idgaf
+        let _ = weak_window.upgrade_in_event_loop(move |window| {
+            let file_infos_model = window.get_file_infos();
+            let file_infos = file_infos_model
+                .as_any()
+                .downcast_ref::<VecModel<FileInfo>>()
+                .unwrap();
+
+            file_infos.remove(index as usize);
+        });
+    });
+
+    let weak_window = window.as_weak();
     let referenced_thread_pool = thread_pool.clone();
     window.on_rotate_videos(move || {
         let window = weak_window.upgrade().unwrap();

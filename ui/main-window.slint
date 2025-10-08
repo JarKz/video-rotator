@@ -20,8 +20,34 @@ export struct FileInfo {
 
 export enum RotationValue { no-rotation, deg-90, deg-180, deg-270 }
 
-component File inherits VerticalBox {
+/// Custom button that differs from standard button by possibility to configure
+component CButton inherits Rectangle {
+  in-out property<bool> enabled <=> touch-area.enabled;
+  out property<bool> has-hover <=> touch-area.has-hover;
+
+  in-out property<string> text <=> text-field.text;
+
+  in-out property<color> background-on-press: gray.brighter(0.5);
+  in-out property<color> background-on-hover: gray.brighter(0.8);
+
+  background: touch-area.pressed ? background-on-press :
+              touch-area.has-hover ? background-on-hover : white;
+
+  animate background {
+    duration: 50ms;
+  }
+
+  callback clicked <=> touch-area.clicked;
+
+  text-field := Text {
+    color: black;
+  }
+  touch-area := TouchArea {}
+}
+
+component AttachedVideo inherits Rectangle {
   in-out property<bool> is-transcoding: false;
+  callback on-close <=> close-button.clicked;
 
   in property<FileInfo> info: {
     path: "",
@@ -29,25 +55,43 @@ component File inherits VerticalBox {
     progress: 0.0,
   };
 
-  alignment: start;
+  VerticalBox {
+    alignment: start;
 
-  Image {
-    source: @image-url("res/video-icon.png");
-    image-fit: contain;
+    Image {
+      source: @image-url("res/video-icon.png");
+      image-fit: contain;
+    }
+
+    Text {
+      height: 60px;
+
+      text: info.name;
+      wrap: word-wrap;
+      font_size: 16pt;
+      overflow: elide;
+      horizontal-alignment: center;
+    }
+
+    if is-transcoding: ProgressIndicator {
+      progress: info.progress;
+    }
   }
 
-  Text {
-    height: 60px;
-
-    text: info.name;
-    wrap: word-wrap;
-    font_size: 16pt;
-    overflow: elide;
-    horizontal-alignment: center;
+  touch-area := TouchArea {
+    enabled: !is-transcoding;
   }
 
-  if is-transcoding: ProgressIndicator {
-    progress: info.progress;
+  close-button := CButton {
+    enabled: !is-transcoding;
+    visible: touch-area.has-hover || self.has-hover;
+    text: "✕";
+    width: 30px;
+    height: 30px;
+    x: parent.width - self.width - 4px;
+    y: 4px;
+
+    border-radius: 20px;
   }
 }
 
@@ -63,7 +107,7 @@ component ImageButton inherits Rectangle {
   background: area.pressed ? gray.brighter(0.7) : transparent;
 
   animate background {
-    duration: 120ms;
+    duration: 50ms;
   }
 
   image := Image {
@@ -207,6 +251,7 @@ export component MainWindow inherits Window {
   callback pick-files;
   callback pick-directory <=> control.pick-directory;
   callback rotate-videos <=> control.rotate-videos;
+  callback remove-video(int);
 
   VerticalLayout {
     padding: 70px;
@@ -220,13 +265,17 @@ export component MainWindow inherits Window {
         spacing: 15px;
         alignment: center;
 
-        for file_info in file_infos: File {
+        for file_info[index] in file_infos: AttachedVideo {
           is-transcoding <=> root.is-transcoding;
 
           info: file_info;
 
           width: 150px;
           height: 200px;
+
+          on-close => {
+            remove-video(index);
+          }
         }
 
         ImageButton {
