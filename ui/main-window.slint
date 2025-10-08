@@ -1,5 +1,12 @@
 import { Palette, Button, ComboBox, ScrollView, VerticalBox, ProgressIndicator } from "std-widgets.slint";
 
+export enum MessageType { info, error }
+
+export struct Message {
+  text: string,
+  mtype: MessageType
+}
+
 export struct DirectoryInfo {
   path: string,
 }
@@ -18,7 +25,7 @@ component File inherits VerticalBox {
 
   in property<FileInfo> info: {
     path: "",
-    name: "Unknown",
+    name: @tr("Unknown"),
     progress: 0.0,
   };
 
@@ -73,7 +80,7 @@ component ImageButton inherits Rectangle {
 component DirectorySelector inherits Rectangle {
   in-out property<bool> enabled: true;
   in-out property<DirectoryInfo> selected-directory: {
-    path: "Select output folder"
+    path: @tr("Select output folder")
   };
 
   callback pick-directory <=> button.clicked;
@@ -82,6 +89,7 @@ component DirectorySelector inherits Rectangle {
     alignment: space-between;
     spacing: 10px;
     padding: 5px;
+    padding-left: 15px;
 
     Text {
       text: selected-directory.path;
@@ -110,7 +118,7 @@ component ControlPane inherits Rectangle {
   in-out property<length> inner-padding: 0px;
   in-out property<RotationValue> rotation-value: no-rotation;
 
-  property<[string]> rotation-value-model: ["No rotation", "90° Clockwise", "180° Clockwise", "270° Clockwise"];
+  property<[string]> rotation-value-model: [@tr("No rotation"), @tr("90° Clockwise"), @tr("180° Clockwise"), @tr("270° Clockwise")];
 
   callback pick-directory <=> path-selector.pick-directory;
   callback rotate-videos <=> button.clicked;
@@ -140,6 +148,9 @@ component ControlPane inherits Rectangle {
 
       combo := ComboBox {
         enabled <=> root.enabled;
+
+        height: 55px;
+
         model: rotation-value-model;
         current-value: rotation-value-model[0];
 
@@ -150,16 +161,29 @@ component ControlPane inherits Rectangle {
     }
 
     button := Button {
-      width: 150px;
+      enabled <=> root.enabled;
+
+      width: 215px;
       height: 50px;
 
-      text: "Rotate videos";
+      text: @tr("Rotate videos");
     }
   }
 }
 
+component MessageBox inherits Text {
+  in-out property<Message> message;
+
+  text: message.text;
+  color: message.mtype == MessageType.error ? red : blue;
+
+  font-size: 16pt;
+  horizontal-alignment: center;
+}
+
 export component MainWindow inherits Window {
   title: "Video Rotator";
+  default-font-size: 16pt;
 
   min-width: 1280px;
   min-height: 720px;
@@ -174,6 +198,11 @@ export component MainWindow inherits Window {
   in-out property<[FileInfo]> file_infos: [];
   in-out property<DirectoryInfo> output-directory <=> control.output-directory;
   in-out property<RotationValue> rotation-value <=> control.rotation-value;
+
+  in-out property<Message> message: {
+    text: "",
+    mtype: MessageType.info,
+  };
 
   callback pick-files;
   callback pick-directory <=> control.pick-directory;
@@ -223,13 +252,17 @@ export component MainWindow inherits Window {
         enabled: !is-transcoding;
 
         width: 800px;
-        height: 150px;
+        height: 170px;
 
         inner-padding: 20px;
 
         background: Palette.control-background;
         border-radius: 15px;
       }
+    }
+
+    MessageBox {
+      message <=> root.message;
     }
   }
 }

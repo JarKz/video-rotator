@@ -1,1 +1,2 @@
 /target
+/locales/*/LC_MESSAGES/*.po

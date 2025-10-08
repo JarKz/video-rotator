@@ -1,0 +1,51 @@
+
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"POT-Creation-Date: 2025-10-08 04:52+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: \n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: ui/main-window.slint:28
+msgctxt "File"
+msgid "Unknown"
+msgstr ""
+
+#: ui/main-window.slint:83
+msgctxt "DirectorySelector"
+msgid "Select output folder"
+msgstr ""
+
+#: ui/main-window.slint:121
+msgctxt "ControlPane"
+msgid "No rotation"
+msgstr ""
+
+#: ui/main-window.slint:121
+msgctxt "ControlPane"
+msgid "90° Clockwise"
+msgstr ""
+
+#: ui/main-window.slint:121
+msgctxt "ControlPane"
+msgid "180° Clockwise"
+msgstr ""
+
+#: ui/main-window.slint:121
+msgctxt "ControlPane"
+msgid "270° Clockwise"
+msgstr ""
+
+#: ui/main-window.slint:169
+msgctxt "ControlPane"
+msgid "Rotate videos"
+msgstr ""
+
+msgid "Video are successfully rotated!"
+msgstr ""

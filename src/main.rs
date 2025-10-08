@@ -11,6 +11,8 @@ use std::{
     time::Duration,
 };
 
+mod locale;
+
 slint::include_modules!();
 
 const SUPPORTED_EXTENSIONS: [&str; 2] = ["mp4", "mkv"];
@@ -118,7 +120,7 @@ fn main() -> anyhow::Result<()> {
     });
 
     let window_weak = window.as_weak();
-    let therad_checker = std::thread::spawn(move || {
+    let _therad_checker = std::thread::spawn(move || {
         loop {
             let mut pool_guard = thread_pool.lock().unwrap();
 
@@ -136,10 +138,15 @@ fn main() -> anyhow::Result<()> {
 
             if pool_guard.is_empty() {
                 window_weak
-                    .upgrade_in_event_loop(|window| {
+                    .upgrade_in_event_loop(move |window| {
                         let is_transcoding = window.get_is_transcoding();
                         if is_transcoding {
                             window.set_is_transcoding(false);
+
+                            window.set_message(Message {
+                                text: tr!("Videos are successfully rotated!").to_shared_string(),
+                                mtype: MessageType::Info,
+                            });
                         }
                     })
                     .unwrap();
@@ -150,12 +157,7 @@ fn main() -> anyhow::Result<()> {
         }
     });
 
-    window.run()?;
-
-    // idgaf
-    let _ = therad_checker.join();
-
-    Ok(())
+    Ok(window.run()?)
 }
 
 fn generate_unique_filename<Output: AsRef<Path>>(

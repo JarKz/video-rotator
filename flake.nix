@@ -41,6 +41,8 @@
           llvmPackages_20.clang-unwrapped.lib
           llvmPackages_20.libllvm.lib
           kdePackages.full
+
+          poedit
         ];
 
         buildInputs = with pkgs; [

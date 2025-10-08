@@ -6,8 +6,10 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 ffmpeg-next = { version = "8.0.0", features = ["build", "build-lib-x264", "build-license-gpl"] }
+gettext = "0.4.0"
 rfd = "0.15.4"
 slint = "1.13.1"
+sys-locale = "0.3.2"
 
 [build-dependencies]
 slint-build = "1.13.1"
