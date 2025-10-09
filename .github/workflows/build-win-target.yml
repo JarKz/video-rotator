@@ -24,6 +24,9 @@ jobs:
           components: rust-src
           targets: "${{ matrix.target }}"
 
+      - name: Instal MSYS2
+        run: choco install msys2 -y
+
       - name: Build Binary
         run: cargo build --verbose --release --target-dir ./target --target ${{ matrix.target }}
       - name: Upload artifact
